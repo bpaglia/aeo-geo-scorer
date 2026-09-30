@@ -24,7 +24,7 @@ AI_BOTS = [
     "Google-Extended",
     "CCBot",
 ]
-MODEL = "gemini-2.5-flash"  # Fast, high-performance free-tier model
+MODEL = "gemini-1.5-flash"
 Q_START = (
     "what",
     "how",
