@@ -4,6 +4,8 @@ from urllib.parse import urlparse, urlunparse
 from urllib.robotparser import RobotFileParser
 
 from bs4 import BeautifulSoup
+from google import genai
+from google.genai import types
 import requests
 import streamlit as st
 
@@ -22,7 +24,7 @@ AI_BOTS = [
     "Google-Extended",
     "CCBot",
 ]
-MODEL = "claude-3-5-sonnet-20241022"  # Valid, stable Anthropic model ID
+MODEL = "gemini-3.8-flash"  # Fast, high-performance free-tier model
 Q_START = (
     "what",
     "how",
@@ -65,29 +67,17 @@ Score each 0-10 and give ONE specific, actionable fix (under 25 words) if the sc
 - quotability: are claims self-contained, specific, and easy to lift as a citation (facts, numbers, definitions)?
 - depth_specificity: original insight, data, examples, and completeness vs. generic filler?
 - entity_trust: is it clear who is speaking, about what entity, with credible sourcing/expertise signals?
-Respond with ONLY JSON: {{"answer_clarity":{{"score":0,"fix":""}},"quotability":{{...}},"depth_specificity":{{...}},"entity_trust":{{...}}}}"""
+Respond with ONLY valid JSON matching this schema: {{"answer_clarity":{{"score":0,"fix":""}},"quotability":{{...}},"depth_specificity":{{...}},"entity_trust":{{...}}}}"""
 
-  r = requests.post(
-      "https://api.anthropic.com/v1/messages",
-      headers={
-          "x-api-key": api_key,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
-      },
-      json={
-          "model": MODEL,
-          "max_tokens": 800,
-          "messages": [{"role": "user", "content": prompt}],
-      },
-      timeout=90,
+  client = genai.Client(api_key=api_key)
+  response = client.models.generate_content(
+      model=MODEL,
+      contents=prompt,
+      config=types.GenerateContentConfig(
+          response_mime_type="application/json", temperature=0.1
+      ),
   )
-  r.raise_for_status()
-  raw = r.json()["content"][0]["text"]
-  # Clean markdown code blocks if the LLM wraps the JSON response
-  raw_clean = re.sub(
-      r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.IGNORECASE
-  )
-  return json.loads(raw_clean)
+  return json.loads(response.text)
 
 
 def analyze_url(url, api_key):
@@ -130,11 +120,11 @@ def analyze_url(url, api_key):
   )
 
   # --- Structured data (15)
-  ld_raw, types = "", set()
+  ld_raw, types_set = "", set()
   for s in soup.find_all("script", type="application/ld+json"):
     ld_raw += s.string or ""
     try:
-      ld_types(json.loads(s.string or ""), types)
+      ld_types(json.loads(s.string or ""), types_set)
     except Exception:
       pass
   content_types = {
@@ -150,20 +140,20 @@ def analyze_url(url, api_key):
   }
   chk(
       "Structured data",
-      5 if types else 0,
+      5 if types_set else 0,
       5,
       "No JSON-LD schema.org markup found. Add structured data.",
   )
   chk(
       "Structured data",
-      5 if types & content_types else 0,
+      5 if types_set & content_types else 0,
       5,
       "Add a content-type schema (Article, FAQPage, HowTo, Product, etc.).",
   )
   chk(
       "Structured data",
       3
-      if types & {"Organization", "Person", "WebSite", "LocalBusiness"}
+      if types_set & {"Organization", "Person", "WebSite", "LocalBusiness"}
       else 0,
       3,
       "Add Organization/Person/WebSite schema so AI can identify the entity"
@@ -171,7 +161,7 @@ def analyze_url(url, api_key):
   )
   chk(
       "Structured data",
-      2 if types & {"FAQPage", "HowTo", "QAPage"} else 0,
+      2 if types_set & {"FAQPage", "HowTo", "QAPage"} else 0,
       2,
       "Add FAQPage or HowTo schema where the content supports it.",
   )
@@ -308,7 +298,7 @@ def analyze_url(url, api_key):
         )
   except Exception as e:
     fixes.append(
-        {"cat": "Note", "issue": f"LLM analysis failed: {str(e)}", "lost": 0}
+        {"cat": "Note", "issue": f"Gemini analysis failed: {str(e)}", "lost": 0}
     )
 
   earned = sum(c[0] for c in cats.values())
@@ -337,10 +327,9 @@ st.write(
 # Sidebar configuration for API Key management
 with st.sidebar:
   st.header("Configuration")
-  # Pulls from Streamlit Secrets if available, otherwise allows manual input
-  default_key = st.secrets.get("ANTHROPIC_API_KEY", "")
+  default_key = st.secrets.get("GEMINI_API_KEY", "")
   api_key_input = st.text_input(
-      "Anthropic API Key", value=default_key, type="password"
+      "Google Gemini API Key", value=default_key, type="password"
   )
   st.markdown("---")
   st.markdown(
@@ -373,7 +362,9 @@ if st.button("Score Page", type="primary"):
                 " scaled to 100 based on technical rules."
             )
           else:
-            st.success("✅ Full hybrid audit complete (Rules + AI Content Judge)")
+            st.success(
+                "✅ Full hybrid audit complete (Rules + Gemini Content Judge)"
+            )
 
         # Category Breakdown
         st.subheader("Category Breakdown")
