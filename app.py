@@ -327,9 +327,22 @@ st.write(
 # Sidebar configuration for API Key management
 with st.sidebar:
   st.header("Configuration")
-  default_key = st.secrets.get("GEMINI_API_KEY", "")
+
+  # Automatically load from Streamlit Secrets if available
+  secret_key = ""
+  try:
+    secret_key = st.secrets.get("GEMINI_API_KEY", "")
+  except Exception:
+    pass
+
   api_key_input = st.text_input(
-      "Google Gemini API Key", value=default_key, type="password"
+      "Google Gemini API Key",
+      value=secret_key,
+      type="password",
+      help=(
+          "Loaded automatically from Streamlit Secrets if configured, or paste"
+          " your key here."
+      ),
   )
   st.markdown("---")
   st.markdown(
@@ -337,7 +350,7 @@ with st.sidebar:
       " (Schema, robots.txt, headings)\n- **40 pts:** AI-judged content"
       " quality (Clarity, quotability, trust)"
   )
-
+    
 # Main URL Input Form
 url_input = st.text_input(
     "Target Page URL", placeholder="https://example.com/blog/article"
